@@ -1,4 +1,4 @@
-module github.com/fusidic/go-microsvc/vessel-service
+module github.com/fusidic/vessel-service
 
 go 1.14
 
