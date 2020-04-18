@@ -3,68 +3,53 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"log"
+	"os"
 
 	pb "github.com/fusidic/vessel-service/proto/vessel"
 	"github.com/micro/go-micro"
 )
 
-type repository interface {
-	FindAvailable(*pb.Specification) (*pb.Vessel, error)
-}
+const (
+	defaultHost = "localhost:27017"
+)
 
-// Our grpc service handler
-type service struct {
-	repo repository
-}
-
-func (s *service) FindAvailable(ctx context.Context, req *pb.Specification, res *pb.Response) error {
-
-	// Find the next available vessel
-	vessel, err := s.repo.FindAvailable(req)
-	if err != nil {
-		return err
+func createDummyData(repo repository) {
+	vessels := []*Vessel{
+		{ID: "vessel01", Name: "Kane's Salty Secret", MaxWeight: 200000, Capacity: 500},
 	}
-
-	// 将匹配的船只写入返回消息中
-	res.Vessel = vessel
-	return nil
-}
-
-// VesselRepository 接口的实现
-type VesselRepository struct {
-	vessels []*pb.Vessel
-}
-
-// FindAvailable - checks a specification against a map of vessels,
-// if capacity and max weight are below a vessels capacity and max weight,
-// then return that vessel.
-// 根据规格清单检查船只，从货船列表中找到一个容量和载重量都符合标准的船
-func (repo *VesselRepository) FindAvailable(spec *pb.Specification) (*pb.Vessel, error) {
-	for _, vessel := range repo.vessels {
-		if spec.Capacity <= vessel.Capacity && spec.MaxWeight <= vessel.MaxWeight {
-			return vessel, nil
-		}
+	for _, v := range vessels {
+		repo.Create(context.Background(), v)
 	}
-	return nil, errors.New("No vessel found by that spec")
 }
 
 func main() {
-	vessels := []*pb.Vessel{
-		&pb.Vessel{Id: "vessel001", Name: "Boaty McBoatface", MaxWeight: 200000, Capacity: 500},
-	}
-	repo := &VesselRepository{vessels}
-
 	srv := micro.NewService(
 		micro.Name("vessel"),
-		micro.Version("latest"),
 	)
 
 	srv.Init()
 
-	// 将接口与我们的实现绑定，将以实现的服务接口注册到Server上
-	pb.RegisterVesselServiceHandler(srv.Server(), &service{repo})
+	uri := os.Getenv("DB_HOST")
+	if uri == "" {
+		uri = defaultHost
+	}
+	client, err := CreateClient(context.Background(), uri)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer client.Disconnect(context.TODO())
+
+	vesselCollection := client.Database("shippy").Collection("vessel")
+	repository := &VesselRepository{
+		vesselCollection,
+	}
+
+	createDummyData(repository)
+
+	// 将VesselRepository中的数据、方法与handler.repository绑定
+	pb.RegisterVesselServiceHandler(srv.Server(), &handler{repository})
 
 	if err := srv.Run(); err != nil {
 		fmt.Println(err)
