@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultHost = "localhost:27017"
+	defaultHost = "mongodb://localhost:27017"
 )
 
 func createDummyData(repo repository) {
